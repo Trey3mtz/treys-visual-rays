@@ -86,7 +86,11 @@ constraint or FOV scale is wrong, and both are adjustable in the panel.
 
 ## Prerequisites
 
-These are UE4SS's requirements, not this mod's, and it enforces all three at
+These come from UE4SS, not from this mod — but they are unavoidable, because
+the root `CMakeLists.txt` does `add_subdirectory(RE-UE4SS)`, so building this
+mod compiles UE4SS from source in the same tree. They are listed under
+"Build requirements" in `RE-UE4SS/README.md` (served as
+<https://docs.ue4ss.com/#build-requirements>), and UE4SS enforces them at
 configure time with a `FATAL_ERROR`:
 
 | Requirement | Minimum | Note |
@@ -105,12 +109,20 @@ errors rather than a clean build. Updating Visual Studio is the actual fix.
 with `git@github.com:` URLs, so `git submodule update --init --recursive` fails
 with `Host key verification failed` unless you have GitHub SSH keys set up.
 
-Rewrite SSH to HTTPS once, globally, and both resolve:
+Rewrite SSH to HTTPS once, globally:
 
 ```bat
 git config --global url."https://github.com/".insteadOf "git@github.com:"
 git submodule update --init --recursive
 ```
+
+That is sufficient for `patternsleuth`, which is public. **`UEPseudo` needs one
+more thing:** UE4SS's README states you must have your GitHub account linked to
+an Epic Games account, with the Unreal Engine source invitation accepted, to
+pull the Unreal pseudo-code submodule. Without that, `deps/first/Unreal` fails
+to clone (or 404s) no matter which URL scheme you use. Link the accounts at
+<https://www.unrealengine.com/account/connections> and accept the resulting
+@EpicGames GitHub organisation invite.
 
 ## Building
 
