@@ -3,13 +3,38 @@ cmake_minimum_required(VERSION 3.22)
 set(TARGET TraceVisualizer)
 project(${TARGET})
 
+# This directory cannot be configured on its own: the UE4SS target is created by
+# add_subdirectory(RE-UE4SS) in the repository root.
+#
+# Without this check the mistake is painful to diagnose. CMake treats a bare
+# name like "UE4SS" in target_link_libraries as a plain library filename rather
+# than a missing target, so configuring this folder alone SUCCEEDS, contributes
+# no UE4SS include directories, and then fails at compile time with hundreds of
+# cascading "cannot open source file" errors.
+if(NOT TARGET UE4SS)
+    message(FATAL_ERROR
+        "TraceVisualizer must be configured from the repository ROOT, not from this directory.\n"
+        "The UE4SS target does not exist here, so no UE4SS headers would be on the include path.\n"
+        "\n"
+        "From the repository root:\n"
+        "    git submodule update --init --recursive\n"
+        "    generate_project_files.bat\n"
+        "    build_mods_shipping.bat\n"
+        "\n"
+        "Or equivalently:\n"
+        "    cmake -B build -G \"Visual Studio 17 2022\" .\n"
+        "    cmake --build build --config Game__Shipping__Win64\n")
+endif()
+
 # Every .cpp under src/ is part of the mod, so a glob is honest here rather
 # than lazy. CONFIGURE_DEPENDS keeps it in step when files are added.
 file(GLOB_RECURSE TRACEVIZ_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
 add_library(${TARGET} SHARED ${TRACEVIZ_SOURCES})
 
-target_compile_features(${TARGET} PRIVATE cxx_std_20)
+# UE4SS itself requires C++23 and exports that as a PUBLIC compile feature, so
+# this only makes the requirement explicit rather than inheriting it silently.
+target_compile_features(${TARGET} PRIVATE cxx_std_23)
 
 target_include_directories(${TARGET}
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"

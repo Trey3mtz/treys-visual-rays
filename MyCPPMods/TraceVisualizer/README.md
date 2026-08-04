@@ -86,13 +86,54 @@ constraint or FOV scale is wrong, and both are adjustable in the panel.
 
 ## Building
 
-The mod is part of the existing `MyCPPMods` CMake tree.
+**Run everything from the repository root, not from this directory.** The mod is
+one node in the `MyCPPMods` CMake tree, and the `UE4SS` target it links against
+is created by `add_subdirectory(RE-UE4SS)` in the root `CMakeLists.txt`.
 
 ```bat
 git submodule update --init --recursive
 generate_project_files.bat
 build_mods_shipping.bat
 ```
+
+Equivalently:
+
+```bat
+cmake -B build -G "Visual Studio 17 2022" .
+cmake --build build --config Game__Shipping__Win64
+```
+
+Note the configuration name: UE4SS defines its own configurations
+(`Game__Shipping__Win64` and friends), not the usual `Debug`/`Release`. Building
+without `--config` will not do what you want.
+
+### If you get hundreds of "cannot open source file" errors
+
+You almost certainly configured *this* directory instead of the repository root:
+
+```bat
+cd MyCPPMods\TraceVisualizer
+cmake -S . -B Output          &:: <- this is the mistake
+```
+
+That fails in a confusing way. CMake treats the bare name `UE4SS` in
+`target_link_libraries` as a plain library *filename* rather than a missing
+target, so configuration **succeeds**, contributes no UE4SS include
+directories, and every `#include <Mod/CppUserModBase.hpp>`, `<Unreal/...>` and
+`<imgui.h>` then fails, cascading into hundreds of errors.
+
+This directory's `CMakeLists.txt` now detects that and stops with an
+explanation instead. Delete the stray build directory and configure from the
+root:
+
+```bat
+rmdir /s /q MyCPPMods\TraceVisualizer\Output
+cd \path\to\treys-visual-rays
+generate_project_files.bat
+```
+
+The other common cause is uninitialised submodules — if `RE-UE4SS\` or
+`RE-UE4SS\deps\first\Unreal\` is empty, see the SSH-URL note below.
 
 **If `git submodule update --init --recursive` fails on `deps/first/Unreal`:**
 that nested submodule (`UEPseudo`) is declared with an SSH URL
