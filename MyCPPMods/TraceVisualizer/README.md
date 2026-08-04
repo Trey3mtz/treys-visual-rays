@@ -219,6 +219,13 @@ Copy `include/TraceViz/TraceVizAPI.h` into your project. It is a plain C ABI
 resolved at runtime, with no dependency on this mod's internals, so the two can
 be built and updated independently.
 
+`TraceViz_Load()` finds the visualizer by asking every loaded module in the
+process for an exported `TraceViz_GetAPI` symbol — it does not look up a DLL by
+name. That is deliberate: UE4SS's own installation convention renames every
+C++ mod's compiled DLL to the literal filename `main.dll`, so a name-based
+lookup would never find anything, and there would be no way to tell one mod's
+`main.dll` apart from another's by name if it did.
+
 ```cpp
 #include <TraceViz/TraceVizAPI.h>
 
@@ -254,7 +261,17 @@ mod still works when the visualizer is not installed.
 mode), a positive value is seconds, `TRACEVIZ_PERSISTENT` lasts until cleared.
 
 **Categories** group visuals so they can be toggled as a set, from code via
-`SetCategoryEnabled` or from the panel.
+`SetCategoryEnabled` or from the panel. A category is just a `uint32_t` you
+choose, so two unrelated mods that both hardcode a small number (`1`, `2`, ...)
+will step on each other's toggle. Derive yours from your mod's name instead:
+
+```cpp
+const uint32_t MyCategory = TraceViz_MakeCategory("MyAwesomeMod.Radar");
+```
+
+`TraceViz_MakeCategory` hashes the string (FNV-1a), so any two distinct names
+land on different categories without either mod needing to know what the other
+picked.
 
 **Threading:** `Draw*` is safe from any thread. The `*Trace` functions call into
 the engine and are game-thread only.
@@ -300,6 +317,16 @@ and the projection maths are verified numerically rather than by eye.
 - **Only the `*Single` trace variants are wrapped.** The `*Multi`, `ByProfile`
   and `ForObjects` variants follow the same pattern and are straightforward to
   add.
+- **The HUD hook is unregistered and reinstalled whenever the HUD instance
+  changes** (map load, respawn), rather than left to accumulate. The one
+  scenario this cannot fully rule out: if the HUD's *class* is unloaded by the
+  engine's garbage collector between one tick and the next (possible for a
+  Blueprint HUD class with nothing else referencing it), the stored
+  `UFunction*` could be dangling before we get a chance to unregister it.
+  UE4SS's own `LiveView` watch system carries the same assumption when
+  unregistering hooks by stored function pointer, so this is not a new category
+  of risk, just one this mod cannot independently rule out without engine-side
+  validation.
 - **Blueprint-issued traces are not captured automatically.** Hooking
   `UKismetSystemLibrary`'s trace `UFunction`s would visualise every trace the
   game's Blueprints perform, and is a natural next step. Traces the game

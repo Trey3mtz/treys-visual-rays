@@ -184,10 +184,19 @@ namespace TraceViz::Engine
         bool GetViewInfo(ViewInfo& Out) const;
 
         Diagnostics GetDiagnostics() const;
-        Settings& GetSettings()
-        {
-            return m_settings;
-        }
+
+        // Settings are read from the game thread on every tick and written
+        // from the UE4SS GUI, which is a genuinely different thread whenever
+        // RenderMode::ExternalThread is configured. There is no raw-reference
+        // accessor for that reason: take a snapshot, let the caller mutate its
+        // own copy (this is what the panel binds ImGui widgets to), then apply
+        // it back.
+        Settings GetSettingsSnapshot() const;
+        void ApplySettings(const Settings& NewSettings);
+
+        // Single-field toggle for the F9 hotkey, whose callback thread is not
+        // documented and should not be assumed to be the game thread either.
+        void ToggleEnabled();
 
         // True once the HUD hook has fired at least once, i.e. we are actually
         // drawing.
@@ -198,6 +207,10 @@ namespace TraceViz::Engine
         void RefreshObjects();
         void SampleCamera();
         void EnsureHudHook();
+        // Unregisters the currently-installed hook, if any, and clears the
+        // bookkeeping for it. Called whenever the HUD instance changes so a
+        // new hook is not stacked on top of an old one still firing.
+        void UnhookHud();
         bool ReadViewportSize(UObject* HudObject, float& OutWidth, float& OutHeight);
         void FillTraceResult(const Reflect::StructReader& Hit, TraceResult& Out);
 

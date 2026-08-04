@@ -134,9 +134,9 @@ namespace TraceViz
 
             // F9 toggles drawing without opening the UE4SS GUI, F10 clears.
             register_keydown_event(Input::Key::F9, [](){
-                auto& Settings = Engine::Get().GetSettings();
-                Settings.bEnabled = !Settings.bEnabled;
-                Output::send<LogLevel::Default>(STR("[TraceViz] Drawing {}.\n"), Settings.bEnabled ? STR("enabled") : STR("disabled"));
+                Engine::Get().ToggleEnabled();
+                const bool bNowEnabled = Engine::Get().GetSettingsSnapshot().bEnabled;
+                Output::send<LogLevel::Default>(STR("[TraceViz] Drawing {}.\n"), bNowEnabled ? STR("enabled") : STR("disabled"));
             });
             register_keydown_event(Input::Key::F10, [](){
                 GetDrawList().Clear();
@@ -167,7 +167,14 @@ namespace TraceViz
     {
         auto& Bridge = Engine::Get();
         const Engine::Diagnostics Diag = Bridge.GetDiagnostics();
-        auto& Settings = Bridge.GetSettings();
+
+        // A local copy, not a reference: this panel can run on UE4SS's own
+        // render thread (RenderMode::ExternalThread), which is a different
+        // thread from the game thread that reads Settings on every tick.
+        // ImGui widgets below bind directly to fields on this local copy,
+        // which is safe because nothing else can see it; the snapshot is
+        // written back to the Bridge once, under lock, at the end.
+        Engine::Settings Settings = Bridge.GetSettingsSnapshot();
 
         // ---- Status. This is the section that answers "why do I see nothing".
         if (ImGui::CollapsingHeader("Status", ImGuiTreeNodeFlags_DefaultOpen))
@@ -299,6 +306,11 @@ namespace TraceViz
             }
             ImGui::Unindent();
         }
+
+        // Write back once, after every widget above has had a chance to touch
+        // the local copy. Unconditional so a frame with no interaction is a
+        // harmless no-op rather than a special case to get right.
+        Bridge.ApplySettings(Settings);
 
         // ---- Test geometry.
         if (ImGui::CollapsingHeader("Test", ImGuiTreeNodeFlags_DefaultOpen))

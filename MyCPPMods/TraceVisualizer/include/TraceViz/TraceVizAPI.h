@@ -46,15 +46,43 @@ extern "C"
 /* Bumped only when the struct layout below changes incompatibly. */
 #define TRACEVIZ_API_VERSION 1u
 
-/* Name of the exported entry point, and of the DLL that provides it. */
+/* Name of the exported entry point that TraceViz_Load() searches for. There is
+ * deliberately no "name of the providing DLL" constant: see TraceViz_Load()
+ * below for why filename-based lookup does not work under UE4SS. */
 #define TRACEVIZ_ENTRY_POINT_NAME "TraceViz_GetAPI"
-#define TRACEVIZ_MODULE_NAME_W L"TraceVisualizer.dll"
 
 /* Duration values with special meaning. */
 #define TRACEVIZ_ONE_FRAME 0.0f
 #define TRACEVIZ_PERSISTENT (-1.0f)
 
 #define TRACEVIZ_DEFAULT_CATEGORY 0u
+
+/*
+ * Categories are just a uint32_t you pick, so two unrelated mods that both
+ * hardcode e.g. `1` will toggle each other's visuals off when either one
+ * disables "their" category. TraceViz_MakeCategory hashes a name (your mod's
+ * name is a good choice) into a category id, which makes an accidental
+ * collision between unrelated mods astronomically unlikely without either
+ * one needing to know what id the other picked:
+ *
+ *     const uint32_t MyCategory = TraceViz_MakeCategory("MyAwesomeMod.Radar");
+ */
+#ifdef __cplusplus
+static inline uint32_t TraceViz_MakeCategory(const char* Name)
+#else
+static uint32_t TraceViz_MakeCategory(const char* Name)
+#endif
+{
+    /* FNV-1a. Not cryptographic, just needs to spread names apart well. */
+    uint32_t Hash = 2166136261u;
+    while (Name && *Name)
+    {
+        Hash ^= (uint32_t)(unsigned char)(*Name++);
+        Hash *= 16777619u;
+    }
+    /* Never collide with the reserved default category. */
+    return (Hash == TRACEVIZ_DEFAULT_CATEGORY) ? 1u : Hash;
+}
 
 /*
  * Trace channels. These are ETraceTypeQuery values, which are *not* the same
@@ -220,9 +248,25 @@ extern "C"
  * Convenience loader. Only compiled on Windows, and only if the consumer has
  * not asked to skip it. Returns null when the visualizer is not installed,
  * which your mod should treat as "visualisation disabled" rather than an error.
+ *
+ * This does NOT look up the visualizer's DLL by name. UE4SS's own C++ mod
+ * installation convention renames every mod's compiled DLL to the literal
+ * filename "main.dll" (see docs/guides/installing-a-c++-mod.md: the file
+ * always ends up at Mods/<ModName>/dlls/main.dll). That means every loaded
+ * C++ mod in the process is a module named main.dll, indistinguishable from
+ * each other by name -- so a name-based GetModuleHandleW lookup for
+ * "TraceVisualizer.dll" would never find anything, no matter how the project
+ * was built, and there would be no reliable way to tell TraceVisualizer's
+ * main.dll apart from any other mod's main.dll if you tried.
+ *
+ * Instead this walks every module currently loaded in the process and asks
+ * each one for the TraceViz_GetAPI export by name. Exactly one mod can export
+ * that symbol, so this finds the right module regardless of what its file is
+ * named on disk.
  */
 #if defined(_WIN32) && !defined(TRACEVIZ_NO_LOADER)
 #include <windows.h>
+#include <tlhelp32.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -231,22 +275,37 @@ extern "C"
 
     static const TraceVizAPI* TraceViz_Load(void)
     {
-        HMODULE Module = GetModuleHandleW(TRACEVIZ_MODULE_NAME_W);
-        if (!Module)
+        HANDLE Snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
+        if (Snapshot == INVALID_HANDLE_VALUE)
         {
             return 0;
         }
 
         {
-            FARPROC Raw = GetProcAddress(Module, TRACEVIZ_ENTRY_POINT_NAME);
-            if (!Raw)
+            const TraceVizAPI* Result = 0;
+            MODULEENTRY32W Entry;
+            Entry.dwSize = sizeof(Entry);
+
+            if (Module32FirstW(Snapshot, &Entry))
             {
-                return 0;
+                do
+                {
+                    FARPROC Raw = GetProcAddress(Entry.hModule, TRACEVIZ_ENTRY_POINT_NAME);
+                    if (Raw)
+                    {
+                        TraceVizGetAPIFn GetAPI = (TraceVizGetAPIFn)(void*)Raw;
+                        const TraceVizAPI* Candidate = GetAPI(TRACEVIZ_API_VERSION);
+                        if (Candidate)
+                        {
+                            Result = Candidate;
+                            break;
+                        }
+                    }
+                } while (Module32NextW(Snapshot, &Entry));
             }
-            {
-                TraceVizGetAPIFn GetAPI = (TraceVizGetAPIFn)(void*)Raw;
-                return GetAPI(TRACEVIZ_API_VERSION);
-            }
+
+            CloseHandle(Snapshot);
+            return Result;
         }
     }
 

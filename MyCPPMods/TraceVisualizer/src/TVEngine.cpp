@@ -247,6 +247,7 @@ namespace TraceViz::Engine
         m_diag.bPlayerControllerFound = (m_player_controller != nullptr);
         if (!m_player_controller)
         {
+            UnhookHud();
             m_hud = nullptr;
             m_camera_manager = nullptr;
             m_diag.bHudFound = false;
@@ -259,12 +260,15 @@ namespace TraceViz::Engine
         UObject* Hud = ReadObjectProperty(m_player_controller, STR("MyHUD"));
         if (Hud != m_hud)
         {
+            // Unregister before switching, not just forget: RegisterHook was
+            // already called for the previous HUD's draw function, and that
+            // registration keeps firing (and keeps calling RenderToHud) even
+            // after we stop tracking it. Every HUD change without this would
+            // stack another hook on whatever function was hooked before,
+            // multiplying draw calls per frame across map loads.
+            UnhookHud();
             m_hud = Hud;
             m_diag.HudClass = SafeObjectClassName(m_hud);
-            // The HUD class may have changed, so the draw event we should hook
-            // may have changed with it.
-            m_hooked_draw_function = nullptr;
-            m_diag.bHudHookInstalled = false;
         }
 
         m_camera_manager = ReadObjectProperty(m_player_controller, STR("PlayerCameraManager"));
@@ -328,6 +332,24 @@ namespace TraceViz::Engine
         m_diag.CameraLocation = Location;
         m_diag.CameraRotation = Rotation;
         m_diag.CameraFov = Fov;
+    }
+
+    void Bridge::UnhookHud()
+    {
+        if (!m_hooked_draw_function)
+        {
+            return;
+        }
+
+        // A HUD class unloaded across a level transition (Blueprint classes
+        // can be garbage-collected when nothing references them any more)
+        // would leave this pointer dangling; UE4SS's own LiveView watch system
+        // carries the same assumption when it unregisters a hook by stored
+        // UFunction pointer, so this is not a new category of risk, but it is
+        // one this mod cannot fully rule out without engine-side validation.
+        UObjectGlobals::UnregisterHook(m_hooked_draw_function, {m_hook_id_pre, m_hook_id_post});
+        m_hooked_draw_function = nullptr;
+        m_diag.bHudHookInstalled = false;
     }
 
     void Bridge::EnsureHudHook()
@@ -895,5 +917,23 @@ namespace TraceViz::Engine
     {
         std::lock_guard<std::mutex> Lock{m_mutex};
         return m_diag.HudDrawCallbacks > 0;
+    }
+
+    Settings Bridge::GetSettingsSnapshot() const
+    {
+        std::lock_guard<std::mutex> Lock{m_mutex};
+        return m_settings;
+    }
+
+    void Bridge::ApplySettings(const Settings& NewSettings)
+    {
+        std::lock_guard<std::mutex> Lock{m_mutex};
+        m_settings = NewSettings;
+    }
+
+    void Bridge::ToggleEnabled()
+    {
+        std::lock_guard<std::mutex> Lock{m_mutex};
+        m_settings.bEnabled = !m_settings.bEnabled;
     }
 } // namespace TraceViz::Engine
