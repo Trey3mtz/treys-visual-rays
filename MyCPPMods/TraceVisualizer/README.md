@@ -84,6 +84,34 @@ constraint or FOV scale is wrong, and both are adjustable in the panel.
 
 ---
 
+## Prerequisites
+
+These are UE4SS's requirements, not this mod's, and it enforces all three at
+configure time with a `FATAL_ERROR`:
+
+| Requirement | Minimum | Note |
+|---|---|---|
+| MSVC | 19.39, toolset 14.39 | Ships with **Visual Studio 2022 17.9**. 17.8 (19.38 / 14.38) is rejected. |
+| Rust | 1.73.0 | `patternsleuth`, one of UE4SS's dependencies, is a Rust crate. `rustc` must be on `PATH`. |
+| CMake | 3.22 | |
+
+`-DUE4SS_VERSION_CHECK=OFF` bypasses the MSVC and Rust checks, but UE4SS is
+built as C++23 and the 14.39 floor exists because of it — expect real compile
+errors rather than a clean build. Updating Visual Studio is the actual fix.
+
+### Submodules use SSH URLs
+
+`RE-UE4SS`'s two nested submodules (`UEPseudo` and `patternsleuth`) are declared
+with `git@github.com:` URLs, so `git submodule update --init --recursive` fails
+with `Host key verification failed` unless you have GitHub SSH keys set up.
+
+Rewrite SSH to HTTPS once, globally, and both resolve:
+
+```bat
+git config --global url."https://github.com/".insteadOf "git@github.com:"
+git submodule update --init --recursive
+```
+
 ## Building
 
 **Run everything from the repository root, not from this directory.** The mod is
@@ -133,19 +161,8 @@ generate_project_files.bat
 ```
 
 The other common cause is uninitialised submodules — if `RE-UE4SS\` or
-`RE-UE4SS\deps\first\Unreal\` is empty, see the SSH-URL note below.
-
-**If `git submodule update --init --recursive` fails on `deps/first/Unreal`:**
-that nested submodule (`UEPseudo`) is declared with an SSH URL
-(`git@github.com:...`), which fails without SSH keys on GitHub. Either set up an
-SSH key, or rewrite it to HTTPS:
-
-```bat
-cd RE-UE4SS
-git config --file .gitmodules submodule.deps/first/Unreal.url https://github.com/Re-UE4SS/UEPseudo.git
-git submodule sync deps/first/Unreal
-git submodule update --init deps/first/Unreal
-```
+`RE-UE4SS\deps\first\Unreal\` is empty, see the SSH-URL note under
+Prerequisites above.
 
 Install the resulting `TraceVisualizer.dll` as a UE4SS C++ mod in the usual
 layout:
