@@ -33,3 +33,13 @@
 
 BuildFiles/
 Output/
+
+# CMake and Visual Studio build output. These were committed previously; they
+# churn on every local build and are not useful in history.
+build/
+out/
+.vs/
+CMakeCache.txt
+CMakeFiles/
+CMakeSettings.json
+*.user

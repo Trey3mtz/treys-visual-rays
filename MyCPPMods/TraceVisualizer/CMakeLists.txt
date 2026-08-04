@@ -1,37 +1,34 @@
 cmake_minimum_required(VERSION 3.22)
-project(MyMod VERSION 1.0.0 LANGUAGES CXX)
 
-# Require C++20 for modern UE4SS API features
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(TARGET TraceVisualizer)
+project(${TARGET})
 
-# Configure Target Unreal Engine Version & System Defines
-add_compile_definitions(
-    # Set this to your exact UE version macro (e.g., UE_VERSION_5_1, UE_VERSION_5_3)
-    UE_VERSION_5_1
-    NOMINMAX
-    WIN32_LEAN_AND_MEAN
-    _CRT_SECURE_NO_WARNINGS
+# Every .cpp under src/ is part of the mod, so a glob is honest here rather
+# than lazy. CONFIGURE_DEPENDS keeps it in step when files are added.
+file(GLOB_RECURSE TRACEVIZ_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+
+add_library(${TARGET} SHARED ${TRACEVIZ_SOURCES})
+
+target_compile_features(${TARGET} PRIVATE cxx_std_20)
+
+target_include_directories(${TARGET}
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    # include/ holds the public consumer header: this mod compiles it, and it
+    # is also the file other mod authors copy into their own project.
+    PUBLIC  "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
-# Collect all project source and header files
-file(GLOB_RECURSE SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
-)
+# UE4SS brings the Unreal reflection headers, the mod base class and ImGui.
+#
+# There is deliberately no UE_VERSION_* define here. This mod resolves every
+# engine call through runtime reflection rather than against a compiled-in
+# struct layout, so it is not built against a specific engine version. If you
+# later add code that does need the engine version, that define belongs in the
+# RE-UE4SS build configuration, not here.
+target_link_libraries(${TARGET} PRIVATE UE4SS)
 
-add_library(${PROJECT_NAME} SHARED ${SOURCES})
-
-# Target Include Directories
-target_include_directories(${PROJECT_NAME} PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    # Points to the C++ API headers included in the UE4SS Mod Template dependency folder
-    "${CMAKE_CURRENT_SOURCE_DIR}/deps/UE4SS/include"
-)
-
-# MSVC Compiler Options
 if(MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE
+    target_compile_options(${TARGET} PRIVATE
         /W4          # High warning level
         /permissive- # Strict conformance
         /utf-8       # Ensure UTF-8 execution character set
