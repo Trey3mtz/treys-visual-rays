@@ -71,4 +71,33 @@ if(MSVC)
         /permissive- # Strict conformance
         /utf-8       # Ensure UTF-8 execution character set
     )
+
+    # RE-UE4SS/UE4SS/CMakeLists.txt links Unreal (the static reflection
+    # library) into UE4SS as a PUBLIC dependency:
+    #     target_link_libraries(UE4SS PUBLIC Unreal SinglePassSigScanner ...)
+    # UE4SS is itself a SHARED library, and its dllexport'd symbols include
+    # everything Unreal defines (FField/FProperty/UObject/UObjectGlobals, ...)
+    # since Unreal's object code is compiled directly into UE4SS.dll. Because
+    # the dependency is PUBLIC, CMake also puts Unreal.lib on the link line
+    # of anything that links UE4SS -- including this target -- so the linker
+    # sees two definitions of the same symbols: once via UE4SS.lib's import
+    # thunks (correct: resolved dynamically against the already-loaded
+    # UE4SS.dll, which is how a mod DLL is supposed to bind to it) and once
+    # from Unreal.lib's own object files linked in a second time directly
+    # (LNK2005 "already defined in UE4SS.lib(UE4SS.dll)").
+    #
+    # This is not fixable from here by changing PRIVATE/PUBLIC on our own
+    # target_link_libraries(UE4SS) call above -- that keyword controls
+    # whether OUR dependents inherit UE4SS's requirements, not whether WE do;
+    # a direct consumer always inherits a linked target's PUBLIC usage
+    # requirements regardless of which keyword it links that target with.
+    # And RE-UE4SS's own CMakeLists.txt is a build dependency this project
+    # does not edit.
+    #
+    # Excluding Unreal specifically from the link forces every one of those
+    # symbols to resolve through UE4SS.lib instead, which is what should
+    # happen anyway. If a similar LNK2005 shows up for another PUBLIC UE4SS
+    # dependency (SinglePassSigScanner, LuaMadeSimple, fmt, ImGui, ...), add
+    # its name here the same way.
+    target_link_options(${TARGET} PRIVATE "/NODEFAULTLIB:Unreal.lib" "/NODEFAULTLIB:Unreal")
 endif()
