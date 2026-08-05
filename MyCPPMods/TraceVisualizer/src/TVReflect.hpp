@@ -27,6 +27,26 @@
 
 #include "TVMath.hpp"
 
+// ---- TEMPORARY diagnostic --------------------------------------------------
+// Tracking down hundreds of LNK2005 duplicate-symbol errors against Unreal.lib
+// for exactly the reflection API used in this file (FField/FProperty/UObject/
+// UObjectGlobals). Unreal/Common.hpp's RC_UE_API macro switches on two defines
+// this project never sets, RC_UNREAL_EXPORTS and RC_UNREAL_BUILD_STATIC -- if
+// either is reaching this translation unit anyway (leaked through UE4SS's
+// PUBLIC dependency on Unreal, the same mechanism that puts Unreal.lib on this
+// mod's link line to begin with), RC_UE_API resolves to plain/dllexport
+// instead of the dllimport a consumer needs, which would explain the
+// duplicate definitions exactly. This block only emits build-log messages; it
+// changes no behaviour and should be removed once the cause is confirmed.
+#if defined(RC_UNREAL_EXPORTS)
+#pragma message("TraceViz diagnostic: RC_UNREAL_EXPORTS is defined here -- RC_UE_API resolves to dllexport")
+#elif defined(RC_UNREAL_BUILD_STATIC)
+#pragma message("TraceViz diagnostic: RC_UNREAL_BUILD_STATIC is defined here -- RC_UE_API resolves to plain (no dllimport/dllexport)")
+#else
+#pragma message("TraceViz diagnostic: neither RC_UNREAL_EXPORTS nor RC_UNREAL_BUILD_STATIC is defined here -- RC_UE_API should correctly resolve to dllimport")
+#endif
+// ---- end TEMPORARY diagnostic -----------------------------------------------
+
 namespace TraceViz::Reflect
 {
     using RC::Unreal::FProperty;
