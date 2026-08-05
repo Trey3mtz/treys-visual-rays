@@ -72,19 +72,22 @@ if(MSVC)
         /utf-8       # Ensure UTF-8 execution character set
     )
 
-    # RE-UE4SS/UE4SS/CMakeLists.txt links Unreal (the static reflection
-    # library) into UE4SS as a PUBLIC dependency:
-    #     target_link_libraries(UE4SS PUBLIC Unreal SinglePassSigScanner ...)
+    # RE-UE4SS/UE4SS/CMakeLists.txt links several first-party static libraries
+    # (Unreal, DynamicOutput, and likely others) into UE4SS as PUBLIC
+    # dependencies:
+    #     target_link_libraries(UE4SS PUBLIC Unreal SinglePassSigScanner
+    #                                        DynamicOutput ...)
     # UE4SS is itself a SHARED library, and its dllexport'd symbols include
-    # everything Unreal defines (FField/FProperty/UObject/UObjectGlobals, ...)
-    # since Unreal's object code is compiled directly into UE4SS.dll. Because
-    # the dependency is PUBLIC, CMake also puts Unreal.lib on the link line
-    # of anything that links UE4SS -- including this target -- so the linker
-    # sees two definitions of the same symbols: once via UE4SS.lib's import
-    # thunks (correct: resolved dynamically against the already-loaded
-    # UE4SS.dll, which is how a mod DLL is supposed to bind to it) and once
-    # from Unreal.lib's own object files linked in a second time directly
-    # (LNK2005 "already defined in UE4SS.lib(UE4SS.dll)").
+    # everything those libraries define (FField/FProperty/UObject/
+    # UObjectGlobals, DefaultTargets::get_default_devices_ref, ...) since their
+    # object code is compiled directly into UE4SS.dll. Because the
+    # dependencies are PUBLIC, CMake also puts each of their .lib files on the
+    # link line of anything that links UE4SS -- including this target -- so
+    # the linker sees two definitions of the same symbols: once via UE4SS.lib
+    # (correct: resolved dynamically against the already-loaded UE4SS.dll,
+    # which is how a mod DLL is supposed to bind to it) and once from each
+    # library's own object files linked in a second time directly (LNK2005
+    # "already defined in UE4SS.lib(UE4SS.dll)").
     #
     # This is not fixable from here by changing PRIVATE/PUBLIC on our own
     # target_link_libraries(UE4SS) call above -- that keyword controls
@@ -94,10 +97,24 @@ if(MSVC)
     # And RE-UE4SS's own CMakeLists.txt is a build dependency this project
     # does not edit.
     #
-    # Excluding Unreal specifically from the link forces every one of those
-    # symbols to resolve through UE4SS.lib instead, which is what should
-    # happen anyway. If a similar LNK2005 shows up for another PUBLIC UE4SS
-    # dependency (SinglePassSigScanner, LuaMadeSimple, fmt, ImGui, ...), add
-    # its name here the same way.
-    target_link_options(${TARGET} PRIVATE "/NODEFAULTLIB:Unreal.lib" "/NODEFAULTLIB:Unreal")
+    # /NODEFAULTLIB:Unreal(.lib) was tried first and had no measurable effect
+    # -- confirmed against a real build, not assumed -- most likely because
+    # CMake places these as explicit link inputs rather than ones pulled in
+    # through the linker's implicit default-library search, which is the only
+    # mechanism /NODEFAULTLIB suppresses.
+    #
+    # A #pragma message diagnostic (since removed) confirmed this mod's own
+    # compiled code correctly sees these symbols as dllimport, i.e. the
+    # duplication is not coming from anything this mod's source does -- it is
+    # purely the same already-compiled Unreal.lib/DynamicOutput.lib object
+    # code being linked in from two places at once. Both copies are the exact
+    # same bytes (Unreal and DynamicOutput are each built as one CMake target
+    # producing one .lib; UE4SS.dll's build links that file into itself, and
+    # this target's build links the identical file in again directly) -- this
+    # is not a genuine ODR conflict between two different implementations,
+    # just the same object code counted twice. /FORCE:MULTIPLE, which is
+    # usually risky because it can silently pick between two DIFFERING
+    # definitions, is safe specifically in this case because there is no
+    # difference to pick between.
+    target_link_options(${TARGET} PRIVATE "/FORCE:MULTIPLE")
 endif()
