@@ -13,6 +13,7 @@
 
 #include <DynamicOutput/DynamicOutput.hpp>
 #include <Unreal/Hooks.hpp>
+#include <Unreal/UEngine.hpp>
 #include <Unreal/UObject.hpp>
 
 #include <imgui.h>
@@ -153,7 +154,17 @@ namespace TraceViz
             // Everything that touches the engine has to happen on the game
             // thread. UE4SS's on_update() runs on its own thread, so the engine
             // tick is the only correct place for per-frame work.
-            Unreal::Hook::RegisterEngineTickPostCallback([](Unreal::UObject*, float DeltaSeconds) {
+            //
+            // Unreal::Hook::EngineTickCallback is
+            // std::function<void(UEngine*, float)>, not a raw function
+            // pointer, and the parameter type here has to be UEngine* (not
+            // the more general UObject*) with <Unreal/UEngine.hpp> actually
+            // included: std::function's constructor needs to verify the
+            // lambda is invocable with a UEngine*, which for a UObject*
+            // parameter means checking the derived-to-base conversion, which
+            // in turn needs UEngine to be a complete type in this
+            // translation unit, not just forward-declared.
+            Unreal::Hook::RegisterEngineTickPostCallback([](Unreal::UEngine*, float DeltaSeconds) {
                 Engine::Get().OnGameTick(DeltaSeconds);
             });
 
