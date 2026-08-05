@@ -43,6 +43,19 @@ target_include_directories(${TARGET}
     PUBLIC  "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
+# NOMINMAX is not optional. Without it, <windows.h>'s min/max macros clobber
+# any FMath::Max(...)/FMath::Min(...) call textually, which is exactly what
+# happens inside UEPseudo's own TArray::RemoveAt/RemoveAtSwap. The macro
+# expansion eats the Max/Min token and leaves e.g. "FMath::(...)", producing a
+# cascade of syntax errors ("illegal token on right side of '::'", then
+# "undeclared identifier" for whatever local the mangled statement was
+# supposed to declare) deep inside an Unreal header that this mod never
+# touches directly -- so if this definition is ever removed again, the
+# failure will look exactly as confusing as it did the first time.
+# WIN32_LEAN_AND_MEAN avoids pulling in the parts of <windows.h> nothing here
+# needs.
+target_compile_definitions(${TARGET} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+
 # UE4SS brings the Unreal reflection headers, the mod base class and ImGui.
 #
 # There is deliberately no UE_VERSION_* define here. This mod resolves every
