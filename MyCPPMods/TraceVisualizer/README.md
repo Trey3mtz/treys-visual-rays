@@ -88,20 +88,36 @@ constraint or FOV scale is wrong, and both are adjustable in the panel.
 
 These come from UE4SS, not from this mod — but they are unavoidable, because
 the root `CMakeLists.txt` does `add_subdirectory(RE-UE4SS)`, so building this
-mod compiles UE4SS from source in the same tree. They are listed under
-"Build requirements" in `RE-UE4SS/README.md` (served as
-<https://docs.ue4ss.com/#build-requirements>), and UE4SS enforces them at
-configure time with a `FATAL_ERROR`:
+mod compiles UE4SS from source in the same tree.
 
-| Requirement | Minimum | Note |
-|---|---|---|
-| MSVC | 19.39, toolset 14.39 | Ships with **Visual Studio 2022 17.9**. 17.8 (19.38 / 14.38) is rejected. |
-| Rust | 1.73.0 | `patternsleuth`, one of UE4SS's dependencies, is a Rust crate. `rustc` must be on `PATH`. |
-| CMake | 3.22 | |
+### `RE-UE4SS` is pinned to the `v3.0.1` tag, deliberately
 
-`-DUE4SS_VERSION_CHECK=OFF` bypasses the MSVC and Rust checks, but UE4SS is
-built as C++23 and the 14.39 floor exists because of it — expect real compile
-errors rather than a clean build. Updating Visual Studio is the actual fix.
+A C++ mod is only ABI-compatible with the exact UE4SS build it was linked
+against — there is no stability guarantee across versions. This repo's
+`RE-UE4SS` submodule is pinned to the `v3.0.1` tag specifically because that
+is what Palworld's own UE4SS install actually runs (confirmed from a live
+`UE4SS.log` banner: `UE4SS - v3.0.1 Beta #0`). Building against a newer commit
+produced a `TraceVisualizer.dll` that loaded fine in isolation but failed at
+runtime with `[0x7f] The specified procedure could not be found` — Windows
+successfully loaded the DLL, then couldn't resolve one of the functions it
+imports from `UE4SS.dll` against the older, already-installed version.
+
+**Do not update this submodule to `main`/latest.** If your own game's UE4SS
+install is ever upgraded, this pin needs to move to match it — check the
+`UE4SS.log` banner for the exact version and Git SHA first, the same way this
+one was diagnosed, rather than assuming "newer is fine."
+
+At `v3.0.1`, UE4SS's build does **not** enforce a minimum MSVC/Rust/CMake
+version the way later commits do (there is no `VersionChecks.cmake` at this
+tag) — so an insufficient toolchain fails with an ordinary compile/link error
+somewhere in the tree rather than a clear upfront message. In practice you
+still need:
+
+| Requirement | Why |
+|---|---|
+| MSVC with C++23 support | UE4SS's root `CMakeLists.txt` sets `CMAKE_CXX_STANDARD 23`. Visual Studio 2022 17.9+ is the safe choice. |
+| Rust (`rustc` on `PATH`) | `patternsleuth_bind`, one of UE4SS's dependencies, is a Rust crate built via Corrosion. |
+| CMake 3.22+ | This mod's own `CMakeLists.txt` requirement. |
 
 ### Submodules use SSH URLs
 
