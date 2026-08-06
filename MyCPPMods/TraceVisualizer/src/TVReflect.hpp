@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <String/StringType.hpp>
+#include <File/Macros.hpp>
 #include <Unreal/FProperty.hpp>
 #include <Unreal/UFunction.hpp>
 #include <Unreal/UObject.hpp>

@@ -25,7 +25,7 @@
 #include <cstdint>
 #include <mutex>
 
-#include <String/StringType.hpp>
+#include <File/Macros.hpp>
 
 #include "TVDrawList.hpp"
 #include "TVMath.hpp"
