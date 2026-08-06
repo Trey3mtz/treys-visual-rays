@@ -202,6 +202,13 @@ namespace TraceViz::Engine
         // drawing.
         bool IsRendering() const;
 
+        // Called from the player controller's own ReceiveTick hook with the
+        // live Context object. Public because the hook callback is a
+        // stateless free function (see EnsurePlayerControllerHook), not a
+        // Bridge member, so it reaches Bridge state through this rather than
+        // through friendship or a private accessor.
+        void NotifyControllerTick(UObject* Controller);
+
       private:
         void BindFunctions();
         void RefreshObjects();
@@ -211,6 +218,20 @@ namespace TraceViz::Engine
         // bookkeeping for it. Called whenever the HUD instance changes so a
         // new hook is not stacked on top of an old one still firing.
         void UnhookHud();
+        // Hooks BP_PalPlayerController_C's own ReceiveTick, once, and leaves
+        // it hooked for the mod's lifetime. This exists because Palworld's
+        // player controller is typically constructed before UE4SS's own
+        // StaticConstructObject hook installs, so it never lands in the
+        // object-searcher pool that FindFirstInstanceOfClass walks -- no
+        // amount of retrying that search ever finds it. Capturing it from a
+        // hook it is guaranteed to call every frame sidesteps that pool
+        // entirely. Hardcodes a Palworld-specific Blueprint path, which is a
+        // real loss of generality for a mod that otherwise resolves
+        // everything through engine-level reflection, but it is what this
+        // mod's actual target game requires; confirmed against this game
+        // session's own UE4SS.log, which shows another mod successfully
+        // hooking this exact path.
+        void EnsurePlayerControllerHook();
         bool ReadViewportSize(UObject* HudObject, float& OutWidth, float& OutHeight);
         void FillTraceResult(const Reflect::StructReader& Hit, TraceResult& Out);
 
@@ -249,6 +270,12 @@ namespace TraceViz::Engine
         RC::Unreal::UFunction* m_hooked_draw_function{};
         int32_t m_hook_id_pre{};
         int32_t m_hook_id_post{};
+
+        // BP_PalPlayerController_C:ReceiveTick, hooked once and left hooked;
+        // see EnsurePlayerControllerHook. No matching unhook: unlike the HUD
+        // hook, this one is never re-targeted at a different function, so
+        // there is nothing to swap it out from under.
+        RC::Unreal::UFunction* m_hooked_controller_tick_function{};
 
         // Bound calls. Kept as members so binding happens once.
         Reflect::FunctionCall m_hud_draw_line;

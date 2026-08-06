@@ -8,8 +8,6 @@
 #include <DynamicOutput/DynamicOutput.hpp>
 #include <Helpers/String.hpp>
 #include <Unreal/AActor.hpp>
-#include <Unreal/Searcher/ObjectSearcher.hpp>
-#include <Unreal/UClass.hpp>
 #include <Unreal/UFunction.hpp>
 #include <Unreal/UFunctionStructs.hpp>
 #include <Unreal/UObjectGlobals.hpp>
@@ -37,7 +35,10 @@ namespace TraceViz::Engine
         constexpr StringViewType kPathCapsuleTrace = STR("/Script/Engine.KismetSystemLibrary:CapsuleTraceSingle");
         constexpr StringViewType kPathBoxTrace = STR("/Script/Engine.KismetSystemLibrary:BoxTraceSingle");
         constexpr StringViewType kPathKismetSystemLibrary = STR("/Script/Engine.KismetSystemLibrary");
-        constexpr StringViewType kPathPlayerControllerClass = STR("/Script/Engine.PlayerController");
+        // Palworld-specific: see EnsurePlayerControllerHook in TVEngine.hpp
+        // for why this is hooked directly rather than discovered generically.
+        constexpr StringViewType kPathPalControllerTick =
+                STR("/Game/Pal/Blueprint/Controller/BP_PalPlayerController.BP_PalPlayerController_C:ReceiveTick");
 
         // EDrawDebugTrace::None. We draw the visualisation ourselves; asking
         // the engine to draw it would be a no-op in a shipping build anyway.
@@ -78,32 +79,6 @@ namespace TraceViz::Engine
             }
             auto* Class = Object->GetClassPrivate();
             return Class ? Class->GetName() : StringType{STR("<no class>")};
-        }
-
-        // Finds the first live (non-default) instance of a class, including
-        // subclasses. Palworld's controller and HUD derive from the engine
-        // types, so an exact-name search would miss them.
-        UObject* FindFirstInstanceOfClass(StringViewType ClassPath)
-        {
-            const StringType PathCopy{ClassPath};
-            auto* Class = UObjectGlobals::StaticFindObject<UClass*>(nullptr, nullptr, PathCopy);
-            if (!Class)
-            {
-                return nullptr;
-            }
-
-            UObject* Found = nullptr;
-            FindObjectSearcher(Class, AnySuperStruct::StaticClass()).ForEach([&](UObject* Object) {
-                // Always returning Continue rather than an early break: UE4SS's
-                // own code only ever uses Continue, so this avoids depending on
-                // a Break enumerator we cannot verify.
-                if (!Found && Object && !Object->HasAnyFlags(RF_ClassDefaultObject))
-                {
-                    Found = Object;
-                }
-                return LoopAction::Continue;
-            });
-            return Found;
         }
 
         // Reads an FVector2D out parameter. FVector2D is two floats in UE4 and
@@ -233,16 +208,11 @@ namespace TraceViz::Engine
 
     void Bridge::RefreshObjects()
     {
-        // A map change destroys the controller, HUD and camera manager
-        // together, so tracking the controller is enough to notice.
-        if (!m_player_controller)
-        {
-            m_player_controller = FindFirstInstanceOfClass(kPathPlayerControllerClass);
-            if (m_player_controller)
-            {
-                m_diag.PlayerControllerClass = SafeObjectClassName(m_player_controller);
-            }
-        }
+        // Installs the controller-tick hook if it is not already installed.
+        // The hook itself keeps m_player_controller current every frame from
+        // then on, via NotifyControllerTick; this call does not touch
+        // m_player_controller directly.
+        EnsurePlayerControllerHook();
 
         m_diag.bPlayerControllerFound = (m_player_controller != nullptr);
         if (!m_player_controller)
@@ -388,6 +358,37 @@ namespace TraceViz::Engine
         m_diag.HookedFunctionName = DrawFunction->GetFullName();
 
         Output::send<LogLevel::Default>(STR("[TraceViz] Installed HUD draw hook on {}\n"), m_diag.HookedFunctionName);
+    }
+
+    void Bridge::EnsurePlayerControllerHook()
+    {
+        if (m_hooked_controller_tick_function)
+        {
+            return;
+        }
+
+        // Fails until the level owning this Blueprint is loaded, so this
+        // keeps retrying every tick rather than giving up after one miss --
+        // the same shape as EnsureHudHook's retry loop.
+        UFunction* TickFunction = Reflect::FindFunction(kPathPalControllerTick);
+        if (!TickFunction)
+        {
+            return;
+        }
+
+        UObjectGlobals::RegisterHook(
+                TickFunction,
+                [](UnrealScriptFunctionCallableContext&, void*) {
+                    // Nothing to do before the controller's own tick.
+                },
+                [](UnrealScriptFunctionCallableContext& Context, void*) {
+                    Get().NotifyControllerTick(Context.Context);
+                },
+                nullptr);
+
+        m_hooked_controller_tick_function = TickFunction;
+
+        Output::send<LogLevel::Default>(STR("[TraceViz] Installed player controller hook on {}\n"), TickFunction->GetFullName());
     }
 
     bool Bridge::ReadViewportSize(UObject* HudObject, float& OutWidth, float& OutHeight)
@@ -935,5 +936,15 @@ namespace TraceViz::Engine
     {
         std::lock_guard<std::mutex> Lock{m_mutex};
         m_settings.bEnabled = !m_settings.bEnabled;
+    }
+
+    void Bridge::NotifyControllerTick(UObject* Controller)
+    {
+        std::lock_guard<std::mutex> Lock{m_mutex};
+        if (Controller != m_player_controller)
+        {
+            m_player_controller = Controller;
+            m_diag.PlayerControllerClass = SafeObjectClassName(m_player_controller);
+        }
     }
 } // namespace TraceViz::Engine
