@@ -8,12 +8,14 @@
 // nothing. AHUD::DrawLine is not debug code, so it survives, and we drive it
 // from inside the HUD's own draw event where the canvas is valid.
 
+#include <chrono>
+
 #include <Mod/CppUserModBase.hpp>
 #include <UE4SSProgram.hpp>
 
 #include <DynamicOutput/DynamicOutput.hpp>
 #include <Unreal/Hooks.hpp>
-#include <Unreal/UEngine.hpp>
+#include <Unreal/AActor.hpp>
 #include <Unreal/UObject.hpp>
 
 #include <imgui.h>
@@ -155,19 +157,27 @@ namespace TraceViz
             Engine::Get().OnUnrealInit();
 
             // Everything that touches the engine has to happen on the game
-            // thread. UE4SS's on_update() runs on its own thread, so the engine
-            // tick is the only correct place for per-frame work.
+            // thread. UE4SS's on_update() runs on its own thread, so a
+            // game-thread hook is the only correct place for per-frame work.
             //
-            // Unreal::Hook::EngineTickCallback is
-            // std::function<void(UEngine*, float)>, not a raw function
-            // pointer, and the parameter type here has to be UEngine* (not
-            // the more general UObject*) with <Unreal/UEngine.hpp> actually
-            // included: std::function's constructor needs to verify the
-            // lambda is invocable with a UEngine*, which for a UObject*
-            // parameter means checking the derived-to-base conversion, which
-            // in turn needs UEngine to be a complete type in this
-            // translation unit, not just forward-declared.
-            Unreal::Hook::RegisterEngineTickPostCallback([](Unreal::UEngine*, float DeltaSeconds) {
+            // This RE-UE4SS version has no engine-level tick hook at all
+            // (RC::Unreal::Hook only detours StaticConstructObject,
+            // ProcessEvent, ProcessConsoleExec, ProcessInternal,
+            // ProcessLocalScriptFunction, LoadMap, InitGameState, BeginPlay,
+            // AActorTick and CallFunctionByNameWithArguments -- confirmed
+            // directly against Hooks.cpp). AActorTick is the closest
+            // available substitute, but it fires once per ticking actor
+            // rather than once per frame, so this debounces to the first
+            // call within each ~1ms window rather than re-running camera
+            // sampling and draw-list aging dozens of times per frame.
+            Unreal::Hook::RegisterAActorTickPostCallback([](Unreal::AActor*, float DeltaSeconds) {
+                static auto LastTick = std::chrono::steady_clock::now();
+                const auto Now = std::chrono::steady_clock::now();
+                if (Now - LastTick < std::chrono::milliseconds(1))
+                {
+                    return;
+                }
+                LastTick = Now;
                 Engine::Get().OnGameTick(DeltaSeconds);
             });
 
