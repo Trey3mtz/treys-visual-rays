@@ -134,12 +134,15 @@ namespace TraceViz
             });
 
             // F9 toggles drawing without opening the UE4SS GUI, F10 clears.
-            register_keydown_event(Input::Key::F9, [](){
+            // CppUserModBase does not expose register_keydown_event itself
+            // (only register_tab); it is a pass-through on UE4SSProgram meant
+            // for exactly this kind of external call.
+            UE4SSProgram::get_program().register_keydown_event(Input::Key::F9, [](){
                 Engine::Get().ToggleEnabled();
                 const bool bNowEnabled = Engine::Get().GetSettingsSnapshot().bEnabled;
                 Output::send<LogLevel::Default>(STR("[TraceViz] Drawing {}.\n"), bNowEnabled ? STR("enabled") : STR("disabled"));
             });
-            register_keydown_event(Input::Key::F10, [](){
+            UE4SSProgram::get_program().register_keydown_event(Input::Key::F10, [](){
                 GetDrawList().Clear();
                 Output::send<LogLevel::Default>(STR("[TraceViz] Cleared draw list.\n"));
             });

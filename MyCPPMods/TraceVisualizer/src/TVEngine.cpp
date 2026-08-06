@@ -50,7 +50,7 @@ namespace TraceViz::Engine
                 return nullptr;
             }
             const StringType Name{PropertyName};
-            auto* Slot = Owner->GetValuePtrByPropertyNameInChain<UObject*>(FromCharTypePtr<TCHAR>(Name.c_str()));
+            auto* Slot = Owner->GetValuePtrByPropertyNameInChain<UObject*>(Name.c_str());
             return Slot ? *Slot : nullptr;
         }
 
@@ -61,7 +61,7 @@ namespace TraceViz::Engine
                 return false;
             }
             const StringType Name{PropertyName};
-            auto* Slot = Owner->GetValuePtrByPropertyNameInChain<int32_t>(FromCharTypePtr<TCHAR>(Name.c_str()));
+            auto* Slot = Owner->GetValuePtrByPropertyNameInChain<int32_t>(Name.c_str());
             if (!Slot)
             {
                 return false;
@@ -363,7 +363,7 @@ namespace TraceViz::Engine
         // on AHUD. If the game's HUD Blueprint implements ReceiveDrawHUD, that
         // override is a different UFunction and it is the one the engine
         // actually calls, so hooking the base class function would never fire.
-        UFunction* DrawFunction = m_hud->GetFunctionByNameInChain(FromCharTypePtr<TCHAR>(STR("ReceiveDrawHUD")));
+        UFunction* DrawFunction = m_hud->GetFunctionByNameInChain(STR("ReceiveDrawHUD"));
         if (!DrawFunction)
         {
             m_diag.LastError = StringType{STR("HUD has no ReceiveDrawHUD function; cannot install the draw hook.")};
@@ -614,7 +614,7 @@ namespace TraceViz::Engine
             WorstError = std::max(WorstError, Error);
             ++Compared;
 
-            Detail += fmt::format(STR("  ours=({:.1f},{:.1f}) engine=({:.1f},{:.1f}) delta={:.2f}px\n"),
+            Detail += std::format(STR("  ours=({:.1f},{:.1f}) engine=({:.1f},{:.1f}) delta={:.2f}px\n"),
                                   Ours.X,
                                   Ours.Y,
                                   EngineX,
@@ -629,7 +629,7 @@ namespace TraceViz::Engine
         }
 
         m_diag.CalibrationErrorPixels = WorstError;
-        m_diag.CalibrationDetail = fmt::format(STR("Compared {} points, worst error {:.2f}px\n"), Compared, WorstError) + Detail;
+        m_diag.CalibrationDetail = std::format(STR("Compared {} points, worst error {:.2f}px\n"), Compared, WorstError) + Detail;
         Output::send<LogLevel::Default>(STR("[TraceViz] Projection calibration:\n{}"), m_diag.CalibrationDetail);
     }
 
